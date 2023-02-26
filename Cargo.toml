@@ -7,6 +7,10 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.23"
-crossterm = { version = "0.26.0", features = ["event-stream", "bracketed-paste"]}
+clap = { version = "4.1.6", features = ["derive"] }
+crossterm = { version = "0.26.0", features = [
+    "event-stream",
+    "bracketed-paste",
+] }
 sntpc = "0.3.2"
 tokio = { version = "1", features = ["full"] }

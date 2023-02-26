@@ -1,17 +1,40 @@
-use crossterm::event::KeyCode;
-use crossterm::terminal;
-use sntpc::{Error, NtpContext, NtpTimestampGenerator, NtpUdpSocket, Result};
-
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use clap::Parser;
 use crossterm::{
     event::{
-        poll, read, DisableMouseCapture, EnableMouseCapture, Event, MouseButton, MouseEventKind,
+        poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton,
+        MouseEventKind,
     },
-    execute,
+    execute, terminal,
 };
+use sntpc::{Error, NtpContext, NtpTimestampGenerator, NtpUdpSocket, Result};
+
+const DEFAULT_NAME: &str = "main";
+const DEFAULT_DATABASE: &str = "watch.sqlite";
+
+/// Measure your watch accuracy on the long run
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Synchronize your watch
+    #[arg(short, long, default_value_t = false)]
+    sync: bool,
+
+    /// Name of the watch to measure
+    #[arg(short, long, default_value_t = DEFAULT_NAME.to_string())]
+    name: String,
+
+    /// Database file
+    #[arg(short, long, default_value_t = DEFAULT_DATABASE.to_string())]
+    data: String,
+
+    /// Number of times to greet
+    #[arg(short, long, default_value_t = 1)]
+    count: u8,
+}
 
 #[derive(Copy, Clone, Default)]
 struct StdTimestampGen {
@@ -87,7 +110,7 @@ fn wait_for_click() -> crossterm::Result<bool> {
     }
 }
 
-async fn w() -> crossterm::Result<()> {
+async fn w(args: &Args) -> crossterm::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0").expect("Unable to crate UDP socket");
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -136,5 +159,6 @@ async fn w() -> crossterm::Result<()> {
 
 #[tokio::main]
 async fn main() {
-    let _a = w().await;
+    let args = Args::parse();
+    let _a = w(&args).await;
 }
