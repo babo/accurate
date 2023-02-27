@@ -16,6 +16,7 @@ use sntpc::{Error, NtpContext, NtpTimestampGenerator, NtpUdpSocket, Result as SN
 
 const DEFAULT_NAME: &str = "main";
 const DEFAULT_DATABASE: &str = "watch.sqlite";
+const DEFAULT_COMMENT: &str = "";
 
 /// Measure your watch accuracy on the long run
 #[derive(Parser, Debug)]
@@ -33,9 +34,9 @@ struct Args {
     #[arg(short, long, default_value_t = DEFAULT_DATABASE.to_string())]
     data: String,
 
-    /// Number of times to greet
-    #[arg(short, long, default_value_t = 1)]
-    count: u8,
+    /// Comment of the measurement if any
+    #[arg(short, long, default_value_t = DEFAULT_COMMENT.to_string())]
+    comment: String,
 }
 
 #[derive(Copy, Clone, Default)]
@@ -117,7 +118,8 @@ fn save_to(
     sec: u32,
     ms: u32,
     duration: u128,
-    name: &str,
+    name: &String,
+    comment: &String,
     sync: bool,
 ) -> SQLResult<()> {
     let conn = Connection::open(dbname)?;
@@ -129,10 +131,17 @@ fn save_to(
             ts   INTEGER PRIMARY KEY,
             diff INTEGER NOT NULL,
             sync BOOLEAN,
-            name TEXT NOT NULL
-        )",
+            name TEXT NOT NULL,
+            comment TEXT NULL
+        );",
         (), // empty list of parameters.
     )?;
+
+    let mut stmt = conn.prepare("select count(*) from measurements;")?;
+    let mut rows = stmt.query(())?;
+    let first = rows.next()?.unwrap();
+    let n: usize = first.get(0)?;
+    let sync = sync || n == 0;
 
     let sec: i64 = (duration / 1000) as i64 + sec as i64;
     let ms: u32 = ms + (duration % 1000) as u32;
@@ -144,8 +153,8 @@ fn save_to(
         let d = if s < 30 { -s } else { 60 - s };
         println!("Single: {m} {s} {d}");
         match conn.execute(
-            "INSERT INTO measurements(ts, diff, sync, name) VALUES(?1,?2,?3,?4)",
-            (sec, d, sync, &name.to_string()),
+            "INSERT INTO measurements(ts, diff, sync, name, comment) VALUES(?1,?2,?3,?4,?5)",
+            (sec, d, sync, name, comment),
         ) {
             Ok(up) => println!("Updated: {up}"),
             Err(e) => println!("Error: {e}"),
@@ -187,7 +196,8 @@ async fn worker(args: &Args) -> crossterm::Result<()> {
                         time.sec(),
                         ms as u32,
                         duration.as_millis(),
-                        args.name.as_str(),
+                        &args.name,
+                        &args.comment,
                         args.sync,
                     );
                     let _ = res.map_err(|err| {
