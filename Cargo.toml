@@ -6,11 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4.23"
+chrono = {version = "0.4.23", features = ["std"] }
 clap = { version = "4.1.6", features = ["derive"] }
 crossterm = { version = "0.26.0", features = [
     "event-stream",
     "bracketed-paste",
 ] }
+rusqlite = { version = "0.28.0", features = ["bundled"] }
 sntpc = "0.3.2"
 tokio = { version = "1", features = ["full"] }

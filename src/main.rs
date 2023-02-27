@@ -1,7 +1,8 @@
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
+use chrono::prelude::*;
+
 use clap::Parser;
 use crossterm::{
     event::{
@@ -10,7 +11,8 @@ use crossterm::{
     },
     execute, terminal,
 };
-use sntpc::{Error, NtpContext, NtpTimestampGenerator, NtpUdpSocket, Result};
+use rusqlite::{Connection, Result as SQLResult};
+use sntpc::{Error, NtpContext, NtpTimestampGenerator, NtpUdpSocket, Result as SNTPResult};
 
 const DEFAULT_NAME: &str = "main";
 const DEFAULT_DATABASE: &str = "watch.sqlite";
@@ -61,14 +63,14 @@ impl NtpTimestampGenerator for StdTimestampGen {
 struct UdpSocketWrapper(UdpSocket);
 
 impl NtpUdpSocket for UdpSocketWrapper {
-    fn send_to<T: ToSocketAddrs>(&self, buf: &[u8], addr: T) -> Result<usize> {
+    fn send_to<T: ToSocketAddrs>(&self, buf: &[u8], addr: T) -> SNTPResult<usize> {
         match self.0.send_to(buf, addr) {
             Ok(usize) => Ok(usize),
             Err(_) => Err(Error::Network),
         }
     }
 
-    fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
+    fn recv_from(&self, buf: &mut [u8]) -> SNTPResult<(usize, SocketAddr)> {
         match self.0.recv_from(buf) {
             Ok((size, addr)) => Ok((size, addr)),
             Err(_) => Err(Error::Network),
@@ -110,7 +112,50 @@ fn wait_for_click() -> crossterm::Result<bool> {
     }
 }
 
-async fn w(args: &Args) -> crossterm::Result<()> {
+fn save_to(
+    dbname: &str,
+    sec: u32,
+    ms: u32,
+    duration: u128,
+    name: &str,
+    sync: bool,
+) -> SQLResult<()> {
+    let conn = Connection::open(dbname)?;
+    conn.path().map(|path| {
+        println!("Path: {:?}", path.as_os_str());
+    });
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS measurements (
+            ts   INTEGER PRIMARY KEY,
+            diff INTEGER NOT NULL,
+            sync BOOLEAN,
+            name TEXT NOT NULL
+        )",
+        (), // empty list of parameters.
+    )?;
+
+    let sec: i64 = (duration / 1000) as i64 + sec as i64;
+    let ms: u32 = ms + (duration % 1000) as u32;
+    let dt = Utc.timestamp_opt(sec, ms * 1_000_000u32);
+
+    dt.single().map(|w| {
+        let m = w.minute();
+        let s = w.second() as i32;
+        let d = if s < 30 { -s } else { 60 - s };
+        println!("Single: {m} {s} {d}");
+        match conn.execute(
+            "INSERT INTO measurements(ts, diff, sync, name) VALUES(?1,?2,?3,?4)",
+            (sec, d, sync, &name.to_string()),
+        ) {
+            Ok(up) => println!("Updated: {up}"),
+            Err(e) => println!("Error: {e}"),
+        }
+    });
+
+    Ok(())
+}
+
+async fn worker(args: &Args) -> crossterm::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0").expect("Unable to crate UDP socket");
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -136,18 +181,18 @@ async fn w(args: &Args) -> crossterm::Result<()> {
 
             match capture {
                 Some(duration) => {
-                    let u = Utc::now();
-                    println!(
-                        "Got time: {}.{} vs {}",
+                    let ms = (time.sec_fraction() as u64) * 1000 / u32::MAX as u64;
+                    let res = save_to(
+                        args.data.as_str(),
                         time.sec(),
-                        time.sec_fraction(),
-                        u.timestamp()
+                        ms as u32,
+                        duration.as_millis(),
+                        args.name.as_str(),
+                        args.sync,
                     );
-                    println!(
-                        "Pressed after {}s {}ms",
-                        duration.as_secs(),
-                        duration.as_millis()
-                    );
+                    let _ = res.map_err(|err| {
+                        println!("An error occured: {}", err.to_string());
+                    });
                 }
                 _ => println!("Next time!"),
             };
@@ -160,5 +205,5 @@ async fn w(args: &Args) -> crossterm::Result<()> {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    let _a = w(&args).await;
+    let _a = worker(&args).await;
 }
