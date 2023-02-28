@@ -12,6 +12,7 @@ crossterm = { version = "0.26.0", features = [
     "event-stream",
     "bracketed-paste",
 ] }
+cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
 rusqlite = { version = "0.28.0", features = ["bundled"] }
 sntpc = "0.3.2"
 tokio = { version = "1", features = ["full"] }
