@@ -171,7 +171,7 @@ async fn worker(args: &Args) -> crossterm::Result<()> {
         .expect("Unable to set UDP socket read timeout");
     let sock_wrapper = UdpSocketWrapper(socket);
     let ntp_context = NtpContext::new(StdTimestampGen::default());
-    let result = sntpc::get_time("time.google.com:123", sock_wrapper, ntp_context);
+    let result = sntpc::get_time("time.cloudflare.com:123", sock_wrapper, ntp_context);
     match result {
         Ok(time) => {
             println!("Press the mouse when the seconds reach 12'clock position.");
