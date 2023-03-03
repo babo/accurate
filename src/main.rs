@@ -1,18 +1,13 @@
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use chrono::prelude::*;
 
 use clap::Parser;
-use crossterm::{
-    event::{
-        poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton,
-        MouseEventKind,
-    },
-    execute, terminal,
-};
 use rusqlite::{Connection, Result as SQLResult};
-use sntpc::{Error, NtpContext, NtpTimestampGenerator, NtpUdpSocket, Result as SNTPResult};
+use sntpc::{Error, NtpContext, NtpResult, NtpTimestampGenerator, NtpUdpSocket};
+
+use cursive::views::{Dialog, DummyView, LinearLayout, RadioGroup};
 
 const DEFAULT_NAME: &str = "main";
 const DEFAULT_DATABASE: &str = "watch.sqlite";
@@ -64,14 +59,14 @@ impl NtpTimestampGenerator for StdTimestampGen {
 struct UdpSocketWrapper(UdpSocket);
 
 impl NtpUdpSocket for UdpSocketWrapper {
-    fn send_to<T: ToSocketAddrs>(&self, buf: &[u8], addr: T) -> SNTPResult<usize> {
+    fn send_to<T: ToSocketAddrs>(&self, buf: &[u8], addr: T) -> sntpc::Result<usize> {
         match self.0.send_to(buf, addr) {
             Ok(usize) => Ok(usize),
             Err(_) => Err(Error::Network),
         }
     }
 
-    fn recv_from(&self, buf: &mut [u8]) -> SNTPResult<(usize, SocketAddr)> {
+    fn recv_from(&self, buf: &mut [u8]) -> sntpc::Result<(usize, SocketAddr)> {
         match self.0.recv_from(buf) {
             Ok((size, addr)) => Ok((size, addr)),
             Err(_) => Err(Error::Network),
@@ -79,45 +74,10 @@ impl NtpUdpSocket for UdpSocketWrapper {
     }
 }
 
-fn wait_for_click() -> crossterm::Result<bool> {
-    let start = Instant::now();
-
-    loop {
-        // `poll()` waits for an `Event` for a given time period
-        if poll(Duration::from_millis(500))? {
-            // It's guaranteed that the `read()` won't block when the `poll()`
-            // function returns `true`
-            match read()? {
-                Event::Key(event) => {
-                    if match event.code {
-                        KeyCode::Esc => true,
-                        KeyCode::Enter => true,
-                        KeyCode::Char(' ') => true,
-                        _ => false,
-                    } {
-                        return Ok(false);
-                    }
-                }
-                Event::Mouse(event) => {
-                    if event.kind == MouseEventKind::Down(MouseButton::Left) {
-                        return Ok(true);
-                    }
-                }
-                _ => (),
-            }
-        }
-        if start.elapsed().as_secs() > 70 {
-            println!("Still there?");
-            return Ok(false);
-        }
-    }
-}
-
 fn save_to(
     dbname: &str,
-    sec: u32,
-    ms: u32,
-    duration: u128,
+    ts: u32,
+    delta: i32,
     name: &String,
     comment: &String,
     sync: bool,
@@ -143,77 +103,109 @@ fn save_to(
     let n: usize = first.get(0)?;
     let sync = sync || n == 0;
 
-    let sec: i64 = (duration / 1000) as i64 + sec as i64;
-    let ms: u32 = ms + (duration % 1000) as u32;
-    let dt = Utc.timestamp_opt(sec, ms * 1_000_000u32);
-
-    dt.single().map(|w| {
-        let m = w.minute();
-        let s = w.second() as i32;
-        let d = if s < 30 { -s } else { 60 - s };
-        println!("Single: {m} {s} {d}");
-        match conn.execute(
-            "INSERT INTO measurements(ts, diff, sync, name, comment) VALUES(?1,?2,?3,?4,?5)",
-            (sec, d, sync, name, comment),
-        ) {
-            Ok(up) => println!("Updated: {up}"),
-            Err(e) => println!("Error: {e}"),
-        }
-    });
+    match conn.execute(
+        "INSERT INTO measurements(ts, diff, sync, name, comment) VALUES(?1,?2,?3,?4,?5)",
+        (ts, delta, sync, name, comment),
+    ) {
+        Ok(up) => println!("Updated: {up}"),
+        Err(e) => println!("Error: {e}"),
+    }
 
     Ok(())
 }
 
-async fn worker(args: &Args) -> crossterm::Result<()> {
+async fn gui(args: &Args) -> Result<(), Error> {
+    let mut siv = cursive::default();
+
+    siv.add_global_callback(cursive::event::Key::Esc, cursive::Cursive::quit);
+
+    siv.add_layer(
+        Dialog::text("Press the mouse when the seconds reach 12'clock position.")
+            .button("12", |s| s.quit()),
+    );
+
+    let ref_time = get_ntp_time().await?;
+    let start = chrono::Utc::now();
+    siv.run();
+    let click = chrono::Utc::now();
+    let duration = click.signed_duration_since(start);
+
+    let sec = ref_time.sec();
+    let ms = (ref_time.sec_fraction() as u64) * 1000 / u32::MAX as u64;
+    let click_dt = Utc
+        .timestamp_opt(sec as i64, (ms * 1_000_000u64) as u32)
+        .single()
+        .expect("Unuable to convert timestamp")
+        .checked_add_signed(duration)
+        .expect("Failed to add duration");
+
+    let mut minute_group: RadioGroup<i32> = RadioGroup::new();
+
+    let tm1 = (click_dt.minute() + 59) % 60;
+    let tp1 = (click_dt.minute() + 1) % 60;
+
+    siv.pop_layer();
+    siv.add_layer(
+        Dialog::new()
+            .title("Please select the minute")
+            // We'll have two columns side-by-side
+            .content(
+                LinearLayout::vertical()
+                    .child(
+                        LinearLayout::vertical()
+                            // The color group uses the label itself as stored value
+                            // By default, the first item is selected.
+                            .child(minute_group.button(-60, format!("{}", tm1)))
+                            .child(minute_group.button(0, format!("{}", click_dt.minute())))
+                            .child(minute_group.button(60, format!("{}", tp1))),
+                    )
+                    // A DummyView is used as a spacer
+                    .child(DummyView),
+            )
+            .button("Ok", cursive::Cursive::quit),
+    );
+    siv.run();
+
+    let delta = minute_group
+        .selection()
+        .checked_sub(click_dt.second() as i32);
+    match delta {
+        Some(delta) => {
+            let res = save_to(
+                args.data.as_str(),
+                sec,
+                delta,
+                &args.name,
+                &args.comment,
+                args.sync,
+            );
+            let _ = res.map_err(|err| {
+                println!("An error occured: {}", err.to_string());
+            });
+            siv.pop_layer();
+            // And we simply print the result.
+            let text = format!("Difference is {:?}s", delta);
+            siv.add_layer(Dialog::text(text).button("Ok", |s| s.quit()));
+            siv.run();
+        }
+        None => (),
+    }
+
+    Ok(())
+}
+
+async fn get_ntp_time() -> Result<NtpResult, Error> {
     let socket = UdpSocket::bind("0.0.0.0:0").expect("Unable to crate UDP socket");
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))
         .expect("Unable to set UDP socket read timeout");
     let sock_wrapper = UdpSocketWrapper(socket);
     let ntp_context = NtpContext::new(StdTimestampGen::default());
-    let result = sntpc::get_time("time.cloudflare.com:123", sock_wrapper, ntp_context);
-    match result {
-        Ok(time) => {
-            println!("Press the mouse when the seconds reach 12'clock position.");
-            terminal::enable_raw_mode()?;
-            let mut stdout = std::io::stdout();
-            execute!(stdout, EnableMouseCapture)?;
-            let start = Instant::now();
-
-            let capture = match wait_for_click() {
-                Ok(true) => Some(start.elapsed()),
-                _ => None,
-            };
-
-            execute!(stdout, DisableMouseCapture)?;
-            terminal::disable_raw_mode()?;
-
-            match capture {
-                Some(duration) => {
-                    let ms = (time.sec_fraction() as u64) * 1000 / u32::MAX as u64;
-                    let res = save_to(
-                        args.data.as_str(),
-                        time.sec(),
-                        ms as u32,
-                        duration.as_millis(),
-                        &args.name,
-                        &args.comment,
-                        args.sync,
-                    );
-                    let _ = res.map_err(|err| {
-                        println!("An error occured: {}", err.to_string());
-                    });
-                }
-                _ => println!("Next time!"),
-            };
-        }
-        Err(err) => println!("Err: {:?}", err),
-    }
-    Ok(())
+    sntpc::get_time("time.cloudflare.com:123", sock_wrapper, ntp_context)
 }
 
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    let _a = worker(&args).await;
+    let _a = gui(&args).await;
 }
