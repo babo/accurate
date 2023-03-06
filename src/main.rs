@@ -117,11 +117,11 @@ fn save_to(
 async fn gui(args: &Args) -> Result<(), Error> {
     let mut siv = cursive::default();
 
-    siv.add_global_callback(cursive::event::Key::Esc, cursive::Cursive::quit);
+    //siv.add_global_callback(cursive::event::Key::Esc, cursive::Cursive::quit);
 
     siv.add_layer(
-        Dialog::text("Press the mouse when the seconds reach 12'clock position.")
-            .button("12", |s| s.quit()),
+        Dialog::text("Press the mouse when the seconds hand reaches the 12'clock position.")
+            .button("Now!", |s| s.quit()),
     );
 
     let ref_time = get_ntp_time().await?;
@@ -135,7 +135,7 @@ async fn gui(args: &Args) -> Result<(), Error> {
     let click_dt = Utc
         .timestamp_opt(sec as i64, (ms * 1_000_000u64) as u32)
         .single()
-        .expect("Unuable to convert timestamp")
+        .expect("Unable to convert timestamp")
         .checked_add_signed(duration)
         .expect("Failed to add duration");
 
