@@ -107,7 +107,7 @@ fn save_to(
         "INSERT INTO measurements(ts, diff, sync, name, comment) VALUES(?1,?2,?3,?4,?5)",
         (ts, delta, sync, name, comment),
     ) {
-        Ok(up) => println!("Updated: {up}"),
+        Ok(_) => println!("Updated, delta is {delta}"),
         Err(e) => println!("Error: {e}"),
     }
 
@@ -121,7 +121,7 @@ async fn gui(args: &Args) -> Result<(), Error> {
 
     siv.add_layer(
         Dialog::text("Press the mouse when the seconds hand reaches the 12'clock position.")
-            .button("Now!", |s| s.quit()),
+            .button(" Now! ", |s| s.quit()),
     );
 
     let ref_time = get_ntp_time().await?;
@@ -155,8 +155,8 @@ async fn gui(args: &Args) -> Result<(), Error> {
                         LinearLayout::vertical()
                             // The color group uses the label itself as stored value
                             // By default, the first item is selected.
-                            .child(minute_group.button(-60, format!("{}", tm1)))
                             .child(minute_group.button(0, format!("{}", click_dt.minute())))
+                            .child(minute_group.button(-60, format!("{}", tm1)))
                             .child(minute_group.button(60, format!("{}", tp1))),
                     )
                     // A DummyView is used as a spacer
