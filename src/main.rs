@@ -142,7 +142,9 @@ async fn gui(args: &Args) -> Result<(), Error> {
     let mut minute_group: RadioGroup<i32> = RadioGroup::new();
 
     let tm1 = (click_dt.minute() + 59) % 60;
+    let tm2 = (click_dt.minute() + 58) % 60;
     let tp1 = (click_dt.minute() + 1) % 60;
+    let tp2 = (click_dt.minute() + 2) % 60;
 
     siv.pop_layer();
     siv.add_layer(
@@ -157,7 +159,9 @@ async fn gui(args: &Args) -> Result<(), Error> {
                             // By default, the first item is selected.
                             .child(minute_group.button(0, format!("{}", click_dt.minute())))
                             .child(minute_group.button(-60, format!("{}", tm1)))
-                            .child(minute_group.button(60, format!("{}", tp1))),
+                            .child(minute_group.button(60, format!("{}", tp1)))
+                            .child(minute_group.button(-120, format!("{}", tm2)))
+                            .child(minute_group.button(120, format!("{}", tp2))),
                     )
                     // A DummyView is used as a spacer
                     .child(DummyView),
