@@ -1,3 +1,4 @@
+use std::fmt;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
 
@@ -7,7 +8,7 @@ use clap::Parser;
 use rusqlite::{Connection, Result as SQLResult};
 use sntpc::{Error, NtpContext, NtpResult, NtpTimestampGenerator, NtpUdpSocket};
 
-use cursive::views::{Dialog, DummyView, LinearLayout, RadioGroup};
+use cursive::views::{Dialog, DummyView, LinearLayout, RadioGroup, TextView};
 
 const DEFAULT_NAME: &str = "main";
 const DEFAULT_DATABASE: &str = "watch.sqlite";
@@ -114,6 +115,52 @@ fn save_to(
     Ok(())
 }
 
+struct Measurement {
+    date: String,
+    time: String,
+    _elapsed: i64,
+    _diff: i32,
+    deviation: f32,
+}
+
+impl fmt::Display for Measurement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {} => {}", self.date, self.time, self.deviation)
+    }
+}
+
+fn get_measurements(dbname: &str) -> SQLResult<String> {
+    let conn = Connection::open(dbname)?;
+    let mut res = conn.prepare(
+        "SELECT
+            date(ts, 'unixepoch') AS 'date',
+            time(time(ts, 'unixepoch'), 'localtime') AS 'time',
+            ts-pts AS elapsed,
+            diff-pdiff AS diff,
+            round(round(3600 * 24 * (diff-pdiff)) / (ts-pts), 1) AS 'sec per day'
+        FROM measurements,
+            (SELECT ts AS pts, diff AS pdiff FROM measurements WHERE sync=1 ORDER BY ts desc LIMIT 1)
+        WHERE ts > pts
+        ORDER BY ts DESC
+        LIMIT 30;
+        ")?;
+    let m_iter = res.query_map([], |row| {
+        Ok(Measurement {
+            date: row.get(0)?,
+            time: row.get(1)?,
+            _elapsed: row.get(2)?,
+            _diff: row.get(3)?,
+            deviation: row.get(4)?,
+        })
+    })?;
+    let mut out = String::new();
+    for m in m_iter {
+        out.push_str(m.unwrap().to_string().as_str());
+        out.push('\n');
+    }
+    Ok(out)
+}
+
 async fn gui(args: &Args) -> Result<(), Error> {
     let mut siv = cursive::default();
 
@@ -188,8 +235,8 @@ async fn gui(args: &Args) -> Result<(), Error> {
             });
             siv.pop_layer();
             // And we simply print the result.
-            let text = format!("Difference is {:?}s", delta);
-            siv.add_layer(Dialog::text(text).button("Ok", |s| s.quit()));
+            let m = get_measurements(args.data.as_str());
+            siv.add_layer(Dialog::around(TextView::new(m.unwrap())).button("Ok", |s| s.quit()));
             siv.run();
         }
         None => (),
