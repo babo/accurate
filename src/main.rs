@@ -85,7 +85,7 @@ fn save_to(
 ) -> SQLResult<()> {
     let conn = Connection::open(dbname)?;
     conn.path().map(|path| {
-        println!("Path: {:?}", path.as_os_str());
+        println!("Path: {path}");
     });
     conn.execute(
         "CREATE TABLE IF NOT EXISTS measurements (
