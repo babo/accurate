@@ -158,6 +158,9 @@ fn get_measurements(dbname: &str) -> SQLResult<String> {
         out.push_str(m.unwrap().to_string().as_str());
         out.push('\n');
     }
+    if out.is_empty() {
+        out.push_str("This is the first measurement, please be back later!")
+    }
     Ok(out)
 }
 
