@@ -193,6 +193,7 @@ async fn gui(args: &Args) -> Result<(), Error> {
 
     let tm1 = (click_dt.minute() + 59) % 60;
     let tm2 = (click_dt.minute() + 58) % 60;
+    let tm3 = (click_dt.minute() + 57) % 60;
     let tp1 = (click_dt.minute() + 1) % 60;
     let tp2 = (click_dt.minute() + 2) % 60;
 
@@ -208,10 +209,11 @@ async fn gui(args: &Args) -> Result<(), Error> {
                             // The color group uses the label itself as stored value
                             // By default, the first item is selected.
                             .child(minute_group.button(0, format!("{}", click_dt.minute())))
-                            .child(minute_group.button(-60, format!("{}", tm1)))
                             .child(minute_group.button(60, format!("{}", tp1)))
+                            .child(minute_group.button(120, format!("{}", tp2)))
+                            .child(minute_group.button(-60, format!("{}", tm1)))
                             .child(minute_group.button(-120, format!("{}", tm2)))
-                            .child(minute_group.button(120, format!("{}", tp2))),
+                            .child(minute_group.button(-180, format!("{}", tm3))),
                     )
                     // A DummyView is used as a spacer
                     .child(DummyView),
