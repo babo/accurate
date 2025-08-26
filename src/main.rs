@@ -96,9 +96,9 @@ fn save_to(
     sync: bool,
 ) -> SQLResult<()> {
     let conn = Connection::open(dbname)?;
-    conn.path().map(|path| {
-        println!("Path: {path}");
-    });
+    if let Some(path) = conn.path() {
+        println!("Connected to database at {path}");
+    }
     conn.execute(
         "CREATE TABLE IF NOT EXISTS measurements (
             ts   INTEGER PRIMARY KEY,
@@ -237,26 +237,23 @@ async fn gui(args: &Args) -> Result<(), Error> {
     let delta = minute_group
         .selection()
         .checked_sub(click_dt.second() as i32);
-    match delta {
-        Some(delta) => {
-            let res = save_to(
-                args.data.as_str(),
-                sec,
-                delta,
-                &args.name,
-                &args.comment,
-                args.sync,
-            );
-            let _ = res.map_err(|err| {
-                println!("An error occured: {}", err.to_string());
-            });
-            siv.pop_layer();
-            // And we simply print the result.
-            let m = get_measurements(args.data.as_str());
-            siv.add_layer(Dialog::around(TextView::new(m.unwrap())).button("Ok", |s| s.quit()));
-            siv.run();
-        }
-        None => (),
+    if let Some(delta) = delta {
+        let res = save_to(
+            args.data.as_str(),
+            sec,
+            delta,
+            &args.name,
+            &args.comment,
+            args.sync,
+        );
+        let _ = res.map_err(|err| {
+            println!("An error occured: {}", err);
+        });
+        siv.pop_layer();
+        // And we simply print the result.
+        let m = get_measurements(args.data.as_str());
+        siv.add_layer(Dialog::around(TextView::new(m.unwrap())).button("Ok", |s| s.quit()));
+        siv.run();
     }
 
     Ok(())
