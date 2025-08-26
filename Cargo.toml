@@ -1,19 +1,19 @@
 [package]
 name = "accurate"
 version = "0.3.0"
-edition = "2021"
+edition = "2024"
 description = "In Search of Lost Time"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = {version = "0.4.23", features = ["std"] }
-clap = { version = "4.1.6", features = ["derive"] }
-crossterm = { version = "0.26.0", features = [
+chrono = {version = "0.4.41", features = ["std"] }
+clap = { version = "4.5.46", features = ["derive"] }
+crossterm = { version = "0.29.0", features = [
     "event-stream",
     "bracketed-paste",
 ] }
-cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
-rusqlite = { version = "0.29.0", features = ["bundled"] }
-sntpc = "0.3.2"
-tokio = { version = "1", features = ["full"] }
+cursive = { version = "0.21.1", default-features = false, features = ["crossterm-backend"] }
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+sntpc = "0.6.0"
+tokio = { version = "1.47.1", features = ["full"] }
