@@ -1,3 +1,4 @@
+use core::future::Future;
 use std::fmt;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
@@ -60,17 +61,28 @@ impl NtpTimestampGenerator for StdTimestampGen {
 struct UdpSocketWrapper(UdpSocket);
 
 impl NtpUdpSocket for UdpSocketWrapper {
-    fn send_to<T: ToSocketAddrs>(&self, buf: &[u8], addr: T) -> sntpc::Result<usize> {
-        match self.0.send_to(buf, addr) {
-            Ok(usize) => Ok(usize),
-            Err(_) => Err(Error::Network),
+    fn send_to(
+        &self,
+        buf: &[u8],
+        addr: sntpc::net::SocketAddr,
+    ) -> impl Future<Output = sntpc::Result<usize>> {
+        async move {
+            match self.0.send_to(buf, addr) {
+                Ok(usize) => Ok(usize),
+                Err(_) => Err(Error::Network),
+            }
         }
     }
 
-    fn recv_from(&self, buf: &mut [u8]) -> sntpc::Result<(usize, SocketAddr)> {
-        match self.0.recv_from(buf) {
-            Ok((size, addr)) => Ok((size, addr)),
-            Err(_) => Err(Error::Network),
+    fn recv_from(
+        &self,
+        buf: &mut [u8],
+    ) -> impl Future<Output = sntpc::Result<(usize, SocketAddr)>> {
+        async {
+            match self.0.recv_from(buf) {
+                Ok((size, addr)) => Ok((size, addr)),
+                Err(_) => Err(Error::Network),
+            }
         }
     }
 }
@@ -255,9 +267,14 @@ async fn get_ntp_time() -> Result<NtpResult, Error> {
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))
         .expect("Unable to set UDP socket read timeout");
-    let sock_wrapper = UdpSocketWrapper(socket);
     let ntp_context = NtpContext::new(StdTimestampGen::default());
-    sntpc::get_time("time.cloudflare.com:123", sock_wrapper, ntp_context)
+    let server_addr: SocketAddr = "time.cloudflare.com:123"
+        .to_socket_addrs()
+        .expect("Unable to resolve host")
+        .next()
+        .unwrap();
+
+    sntpc::get_time(server_addr, &socket, ntp_context).await
 }
 
 #[tokio::main]
